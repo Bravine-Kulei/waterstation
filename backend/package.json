@@ -1,7 +1,7 @@
 {
   "name": "water-station-backend",
   "version": "1.0.0",
-  "description": "Water station backend API",
+  "description": "Water station backend API with M-Pesa integration",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
@@ -9,7 +9,7 @@
     "dev": "node --watch src/server.js",
     "migrate": "node src/scripts/migrate.js"
   },
-  "keywords": [],
+  "keywords": ["water-station", "mpesa", "daraja", "otp"],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -19,9 +19,9 @@
     "dotenv": "^16.3.1",
     "cors": "^2.8.5",
     "helmet": "^7.1.0",
-    "express-rate-limit": "^7.1.5"
+    "express-rate-limit": "^7.1.5",
+    "axios": "^1.7.9",
+    "africastalking": "^0.7.8"
   },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
-  }
+  "devDependencies": {}
 }
