@@ -1,20 +1,39 @@
-import express from 'express';
-import paymentController from '../controllers/paymentController.js';
-import { asyncHandler } from '../middleware/errorHandler.js';
-import { validatePaymentRequest } from '../middleware/paymentValidator.js';
+import express from 'express'
+import mpesaPaymentController from '../controllers/mpesaPaymentController.js'
+import { asyncHandler } from '../middleware/errorHandler.js'
 
-const router = express.Router();
+const router = express.Router()
 
 /**
- * @route   POST /api/payments/initialize
- * @desc    Initialize a Paystack payment
+ * @route   POST /api/payments/preview
+ * @desc    Get payment preview (amount → liters conversion)
+ * @access  Public
+ */
+router.post(
+  '/preview',
+  asyncHandler(mpesaPaymentController.getPaymentPreview.bind(mpesaPaymentController))
+)
+
+/**
+ * @route   POST /api/payments/mpesa/initiate
+ * @desc    Initiate M-Pesa payment (STK Push)
  * @access  Public (should be protected in production)
  */
 router.post(
-  '/initialize',
-  validatePaymentRequest,
-  asyncHandler(paymentController.initializePayment.bind(paymentController))
-);
+  '/mpesa/initiate',
+  asyncHandler(mpesaPaymentController.initiatePayment.bind(mpesaPaymentController))
+)
+
+/**
+ * @route   POST /api/payments/mpesa/callback
+ * @desc    Handle M-Pesa callback from Daraja API
+ * @access  Public (called by Safaricom Daraja)
+ * @note    This endpoint receives STK Push results
+ */
+router.post(
+  '/mpesa/callback',
+  asyncHandler(mpesaPaymentController.handleCallback.bind(mpesaPaymentController))
+)
 
 /**
  * @route   GET /api/payments/status/:transactionReference
@@ -23,41 +42,17 @@ router.post(
  */
 router.get(
   '/status/:transactionReference',
-  asyncHandler(paymentController.getTransactionStatus.bind(paymentController))
-);
+  asyncHandler(mpesaPaymentController.getTransactionStatus.bind(mpesaPaymentController))
+)
 
 /**
- * @route   GET /api/payments/verify/:transactionReference
- * @desc    Verify payment status from Paystack
+ * @route   GET /api/payments/mpesa/query/:transactionReference
+ * @desc    Query M-Pesa payment status directly from Daraja API
  * @access  Public (should be protected in production)
  */
 router.get(
-  '/verify/:transactionReference',
-  asyncHandler(paymentController.verifyPayment.bind(paymentController))
-);
+  '/mpesa/query/:transactionReference',
+  asyncHandler(mpesaPaymentController.queryPayment.bind(mpesaPaymentController))
+)
 
-/**
- * @route   GET /api/payments/callback
- * @desc    Paystack redirect URL after checkout (browser redirect, not webhook)
- * @access  Public
- * @note    This endpoint is typically hit by the customer's browser after payment.
- */
-router.get(
-  '/callback',
-  asyncHandler(paymentController.handleCallback.bind(paymentController))
-);
-
-/**
- * @route   POST /api/payments/webhook
- * @desc    Handle Paystack webhook events
- * @access  Public (called by Paystack)
- * @note    Webhook signature verification is handled in the controller
- * @note    For proper signature verification, raw body is needed
- */
-router.post(
-  '/webhook',
-  express.raw({ type: 'application/json' }), // Get raw body for signature verification
-  asyncHandler(paymentController.handleWebhook.bind(paymentController))
-);
-
-export default router;
+export default router
