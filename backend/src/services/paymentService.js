@@ -1,9 +1,12 @@
-import transactionRepository from '../repositories/transactionRepository.js';
-import paystackService from './paystackService.js';
-import { generateTransactionReference } from '../utils/transactionReference.js';
-import { validateAmount } from '../utils/amountValidator.js';
-import { AppError } from '../middleware/errorHandler.js';
-import { logEvent } from '../middleware/logger.js';
+import transactionRepository from '../repositories/transactionRepository.js'
+import paystackService from './paystackService.js'
+import otpService from './otpService.js'
+import smsService from './smsService.js'
+import { generateTransactionReference } from '../utils/transactionReference.js'
+import { validateAmount } from '../utils/amountValidator.js'
+import { calculateLiters, getPaymentPreview } from '../utils/pricingCalculator.js'
+import { AppError } from '../middleware/errorHandler.js'
+import { logEvent } from '../middleware/logger.js'
 
 /**
  * Payment Service
@@ -22,28 +25,40 @@ class PaymentService {
    * @returns {Promise<Object>} Payment initiation result
    */
   async initiatePayment(paymentData) {
-    const { email, amount, currency = 'NGN', description, phoneNumber, metadata } = paymentData;
+    const { email, amount, currency = 'NGN', description, phoneNumber, metadata } = paymentData
 
     // Validate email
     if (!email || typeof email !== 'string' || !this._isValidEmail(email)) {
-      throw new AppError('Valid email address is required', 400);
+      throw new AppError('Valid email address is required', 400)
     }
 
     // Validate amount
-    const amountValidation = validateAmount(amount);
+    const amountValidation = validateAmount(amount)
     if (!amountValidation.valid) {
-      throw new AppError(amountValidation.error, 400);
+      throw new AppError(amountValidation.error, 400)
+    }
+
+    // Calculate liters for the amount
+    let preview
+    try {
+      preview = getPaymentPreview(amountValidation.normalized)
+    } catch (error) {
+      // If pricing calculator fails, fallback to basic calculation
+      preview = {
+        liters: Math.round(amountValidation.normalized / 5),
+        pricePerLiter: 5,
+      }
     }
 
     // Generate unique transaction reference
-    const transactionReference = generateTransactionReference();
+    const transactionReference = generateTransactionReference()
 
     // Calculate expiration time (24 hours from now for Paystack)
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+    const expiresAt = new Date()
+    expiresAt.setHours(expiresAt.getHours() + 24)
 
     try {
-      // Create transaction record
+      // Create transaction record with liters in metadata
       const transaction = await transactionRepository.create({
         transactionReference,
         email,
@@ -51,9 +66,13 @@ class PaymentService {
         amount: amountValidation.normalized,
         currency,
         status: 'pending',
-        metadata: metadata || null,
+        metadata: {
+          ...(metadata || {}),
+          liters: preview.liters,
+          pricePerLiter: preview.pricePerLiter,
+        },
         expiresAt,
-      });
+      })
 
       logEvent('payment_initiated', {
         transactionReference,
@@ -308,14 +327,46 @@ class PaymentService {
     const updatedTransaction = await transactionRepository.update(
       transaction.transactionReference,
       updates
-    );
+    )
 
     logEvent('payment_webhook_success', {
       transactionReference: transaction.transactionReference,
       reference,
-    });
+    })
 
-    return updatedTransaction;
+    // Generate OTP and send SMS automatically
+    try {
+      // Calculate liters from metadata or amount
+      const liters = transaction.metadata?.liters || calculateLiters(transaction.amount)
+
+      const otpData = await otpService.generateOTP({
+        transactionReference: transaction.transactionReference,
+        liters,
+      })
+
+      // Send OTP via SMS if phone number available
+      if (transaction.phoneNumber) {
+        await smsService.sendOTP({
+          phoneNumber: `+${transaction.phoneNumber}`,
+          otp: otpData.otp,
+          liters,
+          expiresInMinutes: otpData.expiresInMinutes,
+        })
+
+        logEvent('paystack_otp_sent', {
+          transactionReference: transaction.transactionReference,
+          phoneNumber: transaction.phoneNumber,
+        })
+      }
+    } catch (otpError) {
+      // Log but don't fail webhook
+      logEvent('paystack_otp_generation_failed', {
+        transactionReference: transaction.transactionReference,
+        error: otpError.message,
+      })
+    }
+
+    return updatedTransaction
   }
 
   /**

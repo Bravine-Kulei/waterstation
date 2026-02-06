@@ -1,10 +1,11 @@
-import otpRepository from '../repositories/otpRepository.js';
-import transactionRepository from '../repositories/transactionRepository.js';
-import redisClient from '../config/redis.js';
-import { generateOTP, hashOTP, verifyOTP } from '../utils/otpGenerator.js';
-import { otpConfig } from '../config/otp.config.js';
-import { AppError } from '../middleware/errorHandler.js';
-import { logEvent } from '../middleware/logger.js';
+import otpRepository from '../repositories/otpRepository.js'
+import transactionRepository from '../repositories/transactionRepository.js'
+import mpesaTransactionRepository from '../repositories/mpesaTransactionRepository.js'
+import redisClient from '../config/redis.js'
+import { generateOTP, hashOTP, verifyOTP } from '../utils/otpGenerator.js'
+import { otpConfig } from '../config/otp.config.js'
+import { AppError } from '../middleware/errorHandler.js'
+import { logEvent } from '../middleware/logger.js'
 
 /**
  * OTP Service
@@ -19,16 +20,22 @@ class OtpService {
    * @returns {Promise<Object>} OTP generation result (without the actual OTP)
    */
   async generateOTP(params) {
-    const { transactionReference, liters } = params;
+    const { transactionReference, liters } = params
 
-    // Validate transaction exists and is completed
-    const transaction = await transactionRepository.findByReference(transactionReference);
+    // Try to find transaction in M-Pesa transactions table first, then fall back to old transactions table
+    let transaction = await mpesaTransactionRepository.findByReference(transactionReference)
+    
     if (!transaction) {
-      throw new AppError('Transaction not found', 404);
+      // Fall back to old Paystack transactions table for backward compatibility
+      transaction = await transactionRepository.findByReference(transactionReference)
+    }
+
+    if (!transaction) {
+      throw new AppError('Transaction not found', 404)
     }
 
     if (transaction.status !== 'completed') {
-      throw new AppError('OTP can only be generated for completed transactions', 400);
+      throw new AppError('OTP can only be generated for completed transactions', 400)
     }
 
     // Check if active OTP already exists

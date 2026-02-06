@@ -59,6 +59,23 @@ export async function runMigrations() {
       }
     }
 
+    // Read and execute mpesa_transactions_migration.sql
+    const mpesaMigrationSqlPath = path.join(__dirname, '../models/mpesa_transactions_migration.sql');
+    const mpesaMigrationSql = fs.readFileSync(mpesaMigrationSqlPath, 'utf8');
+    
+    // Execute M-Pesa transactions migration
+    try {
+      await client.query(mpesaMigrationSql);
+      console.log('✓ M-Pesa transactions table created/checked');
+    } catch (error) {
+      // Check if it's an "already exists" error
+      if (error.code === '42P07' || error.message.includes('already exists')) {
+        console.log('✓ M-Pesa transactions table already exists, skipping...');
+      } else {
+        throw error;
+      }
+    }
+
     console.log('Database migrations completed successfully');
   } catch (error) {
     console.error('\nMigration failed:', error.message);
